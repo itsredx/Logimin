@@ -18,19 +18,23 @@ const Chat = () => {
   // Load conversations
   useEffect(() => {
     const loadConversations = async () => {
-      setLoading(true);
-      const data = await mockApi.getConversations();
-      setConversations(data);
-      
-      // Check if there is a state passed from navigation (e.g., from Riders page)
-      const stateConvId = location.state?.conversationId;
-      if (stateConvId) {
-        setActiveConversationId(stateConvId);
-      } else if (data.length > 0 && !activeConversationId) {
-        setActiveConversationId(data[0].id);
+      try {
+        setLoading(true);
+        const data = await mockApi.getConversations();
+        setConversations(data || []);
+        
+        // Check if there is a state passed from navigation (e.g., from Riders page)
+        const stateConvId = location.state?.conversationId;
+        if (stateConvId) {
+          setActiveConversationId(stateConvId);
+        } else if (data && data.length > 0 && !activeConversationId) {
+          setActiveConversationId(data[0].id);
+        }
+      } catch (err) {
+        console.error("Failed to load conversations", err);
+      } finally {
+        setLoading(false);
       }
-      
-      setLoading(false);
     };
     loadConversations();
   }, [location.state]);
@@ -39,13 +43,17 @@ const Chat = () => {
   useEffect(() => {
     if (activeConversationId) {
       const loadMessages = async () => {
-        const msgs = await mockApi.getMessages(activeConversationId);
-        setMessages(msgs);
-        
-        // Reset unread count locally
-        setConversations(prev => prev.map(c => 
-          c.id === activeConversationId ? { ...c, unread_count: 0 } : c
-        ));
+        try {
+          const msgs = await mockApi.getMessages(activeConversationId);
+          setMessages(msgs || []);
+          
+          // Reset unread count locally
+          setConversations(prev => prev.map(c => 
+            c.id === activeConversationId ? { ...c, unread_count: 0 } : c
+          ));
+        } catch (err) {
+          console.error("Failed to load messages", err);
+        }
       };
       loadMessages();
     }
@@ -53,28 +61,36 @@ const Chat = () => {
 
   // Scroll to bottom of messages
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messages.length > 0 && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim() || !activeConversationId) return;
 
-    setSending(true);
-    const sentMsg = await mockApi.sendMessage(activeConversationId, newMessage);
-    setMessages(prev => [...prev, sentMsg]);
-    setNewMessage('');
-    setSending(false);
-    
-    // Update last message in conversation list
-    setConversations(prev => prev.map(c => 
-      c.id === activeConversationId 
-        ? { ...c, last_message: { content: sentMsg.content, timestamp: sentMsg.timestamp }, updated_at: sentMsg.timestamp }
-        : c
-    ).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()));
+    try {
+      setSending(true);
+      const sentMsg = await mockApi.sendMessage(activeConversationId, newMessage);
+      setMessages(prev => [...prev, sentMsg]);
+      setNewMessage('');
+      
+      // Update last message in conversation list
+      setConversations(prev => prev.map(c => 
+        c.id === activeConversationId 
+          ? { ...c, last_message: { content: sentMsg.content, timestamp: sentMsg.timestamp }, updated_at: sentMsg.timestamp }
+          : c
+      ).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()));
+    } catch (err) {
+      console.error("Failed to send message", err);
+    } finally {
+      setSending(false);
+    }
   };
 
   const getOtherParticipant = (conversation: Conversation) => {
+    if (!conversation || !conversation.participants || conversation.participants.length === 0) return { username: 'Unknown', id: -1 };
     // Assuming admin ID is 999 as per mockService
     return conversation.participants.find(p => p.id !== 999) || conversation.participants[0];
   };
